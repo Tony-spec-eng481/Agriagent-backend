@@ -1,90 +1,112 @@
-// firebase.config.js
-require("dotenv").config(); // MUST be first to load .env   
-
 const admin = require("firebase-admin");
 const path = require("path");
+const fs = require("fs");
 
-// Check if service account path exists, otherwise use environment variables
-let serviceAccount;
-try {
-  const serviceAccountPath = path.join(  
-    __dirname,
-    "../../serviceAccountKey.json",
-  );
-  serviceAccount = require(serviceAccountPath);
-} catch (error) {
-  // If service account file doesn't exist, try environment variable
+function getServiceAccount() {
+  // Try environment variables first (for production: Vercel, Render, etc.)
+
+  // Option 1: Base64 encoded (recommended for Vercel)
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+    try {
+      const decoded = Buffer.from(
+        process.env.FIREBASE_SERVICE_ACCOUNT_BASE64,
+        "base64",
+      ).toString("utf8");
+      return JSON.parse(decoded);
+    } catch (error) {
+      console.error("Error decoding base64 service account:", error.message);
+    }
+  }
+
+  // Option 2: Direct JSON string
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } else {
-    console.error(
-      "Firebase service account not found. Please provide serviceAccountKey.json or FIREBASE_SERVICE_ACCOUNT env var.",
+    try {
+      return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } catch (error) {
+      console.error("Error parsing JSON service account:", error.message);
+    }
+  }
+
+  // Option 3: Individual environment variables
+  if (
+    process.env.FIREBASE_PROJECT_ID &&
+    process.env.FIREBASE_PRIVATE_KEY &&
+    process.env.FIREBASE_CLIENT_EMAIL
+  ) {
+    return {
+      type: "service_account",
+      project_id: process.env.FIREBASE_PROJECT_ID,
+      private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+      private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      client_email: process.env.FIREBASE_CLIENT_EMAIL,
+      client_id: process.env.FIREBASE_CLIENT_ID,
+      auth_uri: "https://accounts.google.com/o/oauth2/auth",
+      token_uri: "https://oauth2.googleapis.com/token",
+      auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+      client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL,
+    };
+  }
+
+  // Option 4: Local JSON file (for development)
+  try {
+    const serviceAccountPath = path.join(
+      __dirname,
+      "..",
+      "..",
+      "config",
+      "serviceAccountKey.json",
     );
-    throw error;
-  }  
+
+    if (fs.existsSync(serviceAccountPath)) {
+      return require(serviceAccountPath);
+    }
+  } catch (error) {
+    console.error("Error loading local service account file:", error.message);
+  }
+
+  // If all methods fail
+  throw new Error(
+    "Firebase service account not found. Please set one of:\n" +
+      "1. FIREBASE_SERVICE_ACCOUNT_BASE64 (Base64 encoded JSON)\n" +
+      "2. FIREBASE_SERVICE_ACCOUNT (JSON string)\n" +
+      "3. Individual Firebase env vars (FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, etc.)\n" +
+      "4. Local ../serviceAccountKey.json file",
+  );
 }
 
-// Initialize Firebase app
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL:
-    process.env.FIREBASE_DATABASE_URL ||
-    `https://${serviceAccount.project_id}.firebaseio.com`,
-  storageBucket:
-    process.env.FIREBASE_STORAGE_BUCKET ||
-    `${serviceAccount.project_id}.appspot.com`,
-});
+// Initialize Firebase Admin
+let db, auth, storage, FieldValue;
 
-// Firestore instance
-const db = admin.firestore();
+try {
+  const serviceAccount = getServiceAccount();
 
-// Firebase Auth
-const auth = admin.auth();
-  
-// Cloud Storage bucket  
-const storage = admin.storage().bucket();
-
-// Firestore FieldValue helper
-const FieldValue = admin.firestore.FieldValue;
-// Helper to generate random IDs
-const generateId = () => {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  for (let i = 0; i < 20; i++) {
-    id += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return id;
-};
-
-// Get current timestamp
-const getTimestamp = () => {
-  const now = new Date();
-  return {
-    _createdAt: now,
-    _updatedAt: now,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-  };
-};
-
-// Delete existing collections (optional)
-const clearCollection = async (collectionName) => {
-  try {
-    const collectionRef = db.collection(collectionName);
-    const snapshot = await collectionRef.get();
-    const batch = db.batch();
-
-    snapshot.docs.forEach((doc) => {
-      batch.delete(doc.ref);
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL:
+        process.env.FIREBASE_DATABASE_URL ||
+        `https://${serviceAccount.project_id}.firebaseio.com`,
+      storageBucket:
+        process.env.FIREBASE_STORAGE_BUCKET ||
+        `${serviceAccount.project_id}.appspot.com`,
     });
 
-    await batch.commit();
-    console.log(`✅ Cleared ${collectionName} collection`);
-  } catch (error) {  
-    console.error(`❌ Error clearing ${collectionName}:`, error.message);
+    console.log("✅ Firebase Admin initialized successfully");
   }
-};
+
+  // Export Firebase services
+  db = admin.firestore();
+  auth = admin.auth();
+  storage = admin.storage().bucket();
+  FieldValue = admin.firestore.FieldValue;
+} catch (error) {
+  console.error("❌ Firebase initialization failed:", error.message);
+  // Don't throw here if you want the app to start without Firebase
+  // (useful for development without Firebase config)
+  if (process.env.NODE_ENV === "production") {
+    throw error;
+  }
+}
 
 module.exports = {
   admin,
@@ -92,7 +114,4 @@ module.exports = {
   auth,
   storage,
   FieldValue,
-  generateId,
-  getTimestamp,
-  clearCollection,
 };

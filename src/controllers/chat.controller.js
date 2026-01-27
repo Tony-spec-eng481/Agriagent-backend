@@ -10,7 +10,7 @@ class ChatController {
   async sendMessage(req, res) {
     try {
       const { message, userId, location, chatId } = req.body;
-
+   
       if (!message) {
         return res
           .status(400)
@@ -404,7 +404,7 @@ class ChatController {
       }
 
       // Get session data
-      const sessionRef = this.db.collection("chatSessions").doc(sessionId);
+      const sessionRef = FirebaseService.db.collection("chatSessions").doc(sessionId);
       const sessionDoc = await sessionRef.get();
 
       if (!sessionDoc.exists) {

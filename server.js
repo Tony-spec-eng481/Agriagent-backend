@@ -10,7 +10,15 @@ const dotenv = require("dotenv");
 const dns = require("dns");
 
 // Load environment variables
-dotenv.config();
+const fs = require("fs");
+const path = require("path");
+
+if (fs.existsSync(path.resolve(__dirname, ".env.local"))) {
+  dotenv.config({ path: ".env.local" });
+} else {
+  dotenv.config();
+}
+
 dns.setDefaultResultOrder("ipv4first");
 
 // Import routes
@@ -194,13 +202,17 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
 
-app.listen(PORT, HOST, () => {
-  console.log(`🚀 Server running on http://${HOST}:${PORT}`);
-  console.log(`📡 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`🔗 Health check: http://${HOST}:${PORT}/health`);
-  console.log(`🌐 Network URL: http://192.168.1.104:${PORT}`);
-  console.log(`📊 API Endpoints:`);
-  console.log(`   - News: http://${HOST}:${PORT}/api/news`);
-  console.log(`   - Chat: http://${HOST}:${PORT}/api/chat`);
-  console.log(`   - Shops: http://${HOST}:${PORT}/api/shops`);
-});
+if (require.main === module) {
+  app.listen(PORT, HOST, () => {
+    console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+    console.log(`📡 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log(`🔗 Health check: http://${HOST}:${PORT}/health`);
+    console.log(`🌐 Network URL: http://192.168.1.104:${PORT}`);
+    console.log(`📊 API Endpoints:`);
+    console.log(`   - News: http://${HOST}:${PORT}/api/news`);
+    console.log(`   - Chat: http://${HOST}:${PORT}/api/chat`);
+    console.log(`   - Shops: http://${HOST}:${PORT}/api/shops`);
+  });
+}
+
+module.exports = app;
