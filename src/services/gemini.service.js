@@ -5,7 +5,7 @@ class GeminiService {
   constructor() {
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-1.5-flash", // or "gemini-1.5-pro" for more complex tasks
+      model: "gemini-3-flash-preview", // or "gemini-1.5-pro" for more complex tasks
       generationConfig: {
         maxOutputTokens: 2000,
         temperature: 0.7,
@@ -156,7 +156,7 @@ async analyzeImageWithVision(base64Image, context = {}) {
       ...analysis,
       visionType: "agricultural",
       analyzedAt: new Date().toISOString(),
-      model: "gemini-1.5-flash",
+      model: "gemini-3-flash-preview",
     };
   } catch (error) {
     console.error("Gemini Vision Analysis Error:", error);
