@@ -6,7 +6,7 @@ const { authenticate } = require("../middleware/auth.middleware");
 // Debug route - always public
 router.get("/debug", (req, res) => {
   res.json({
-    success: true,
+    success: true,  
     message: "Shop router is working",
     timestamp: new Date(),
     path: "/api/shops",

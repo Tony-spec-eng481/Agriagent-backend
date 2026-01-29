@@ -1,15 +1,16 @@
-const GeminiService = require("../services/gemini.service"); // Changed from OpenAI to Gemini
+const OpenAIService = require("../services/openai.service");
 const FirebaseService = require("../services/firebase.service");
 const { v4: uuidv4 } = require("uuid");
 
 class ChatController {
   // =========================
-  // Send text
+  // Send text   
   // =========================
+  // Update sendMessage method in ChatController
   async sendMessage(req, res) {
     try {
-      const { message, userId, location, chatId, chatHistory } = req.body;
-
+      const { message, userId, location, chatId } = req.body;
+   
       if (!message) {
         return res
           .status(400)
@@ -30,15 +31,9 @@ class ChatController {
         timestamp: new Date(),
       });
 
-      // Get recent chat history for context
-      const recentMessages = await FirebaseService.getChatMessages(sessionId, {
-        limit: 5,
-      });
-
-      // AI analysis with Gemini
-      const geminiResponse = await GeminiService.analyzeTextMessage(message, {
+      // AI analysis
+      const aiResponse = await OpenAIService.analyzeTextMessage(message, {
         userLocation: location,
-        chatHistory: recentMessages,
       });
 
       // Save AI message
@@ -47,28 +42,28 @@ class ChatController {
         userId: "ai",
         chatId: sessionId,
         role: "assistant",
-        content: geminiResponse.response || "Message analyzed",
-        metadata: geminiResponse.metadata || {},
-        suggestedActions: geminiResponse.suggestedActions || [],
+        content: aiResponse.response || "Message analyzed",
+        metadata: aiResponse.metadata || {},
         timestamp: new Date(),
       });
 
       res.json({
         success: true,
-        response: geminiResponse.response,
+        response: aiResponse.response,
         userMessageId,
         aiMessageId,
         chatId: sessionId,
-        metadata: geminiResponse.metadata || {},
-        suggestedActions: geminiResponse.suggestedActions || [],
+        metadata: aiResponse.metadata || {},
         timestamp: new Date(),
       });
     } catch (error) {
       console.error("Send message error:", error);
-      res.status(500).json({
-        success: false,
-        error: error.message || "Failed to process message",
-      });
+      res
+        .status(500)
+        .json({
+          success: false,
+          error: error.message || "Failed to process message",
+        });
     }
   }
 
@@ -93,15 +88,16 @@ class ChatController {
       });
       const sessionId = session.session.id;
 
-      // Upload image to Firebase
+      // Upload image to Firebase if possible
       let imageUrl = null;
       try {
         const buffer = Buffer.from(imageBase64, "base64");
+        // Using uploadFile as uploadImage might limit functionality or not exist
         imageUrl = await FirebaseService.uploadFile(
           buffer,
           userId || "guest",
           "chat-images",
-          `img_${Date.now()}_${uuidv4()}.jpg`,
+          `img_${Date.now()}_${uuidv4()}.jpg`
         );
       } catch (err) {
         console.error("Image upload failed:", err);
@@ -119,8 +115,8 @@ class ChatController {
         timestamp: new Date(),
       });
 
-      // Analyze with Gemini
-      const analysis = await GeminiService.analyzeImage(imageBase64, {
+      // Analyze with OpenAI
+      const analysis = await OpenAIService.analyzeImage(imageBase64, {
         userLocation: location,
       });
 
@@ -178,13 +174,11 @@ class ChatController {
       const sessionId = chatId || `chat_${Date.now()}_${uuidv4()}`;
       const messageId = `doc_${Date.now()}_${uuidv4()}`;
 
-      // Extract text content (for text-based documents)
       const textContent = Buffer.from(fileBase64, "base64")
         .toString("utf-8")
         .substring(0, 10000);
 
-      // Analyze with Gemini
-      const analysis = await GeminiService.analyzeDocument(
+      const analysis = await OpenAIService.analyzeDocument(
         textContent,
         fileType,
       );
@@ -350,6 +344,7 @@ class ChatController {
       });
     }
   }
+  // Add these methods to your ChatController class
 
   // =========================
   // Create new chat session
@@ -409,9 +404,7 @@ class ChatController {
       }
 
       // Get session data
-      const sessionRef = FirebaseService.db
-        .collection("chatSessions")
-        .doc(sessionId);
+      const sessionRef = FirebaseService.db.collection("chatSessions").doc(sessionId);
       const sessionDoc = await sessionRef.get();
 
       if (!sessionDoc.exists) {
@@ -490,62 +483,6 @@ class ChatController {
       res.status(500).json({
         success: false,
         error: error.message || "Failed to update session title",
-      });
-    }
-  }
-
-  // =========================
-  // Generate planting schedule (new endpoint)
-  // =========================
-  async generatePlantingSchedule(req, res) {
-    try {
-      const { crop, location, season, userId } = req.body;
-
-      if (!crop || !location || !season) {
-        return res.status(400).json({
-          success: false,
-          error: "Crop, location, and season are required",
-        });
-      }
-
-      const schedule = await GeminiService.generatePlantingSchedule(
-        crop,
-        location,
-        season,
-      );
-
-      // Create a chat session for the planting schedule
-      const session = await FirebaseService.getOrCreateSession(
-        userId || "guest",
-        null,
-        {
-          title: `Planting Schedule: ${crop}`,
-          type: "schedule",
-          tags: ["planting-schedule", crop.toLowerCase()],
-        },
-      );
-
-      // Save the schedule
-      await FirebaseService.saveAIMessage({
-        id: `schedule_${Date.now()}_${uuidv4()}`,
-        userId: "ai",
-        chatId: session.session.id,
-        role: "assistant",
-        content: `Planting schedule for ${crop} in ${location} during ${season}`,
-        metadata: schedule,
-        timestamp: new Date(),
-      });
-
-      res.json({
-        success: true,
-        schedule,
-        chatId: session.session.id,
-      });
-    } catch (error) {
-      console.error("Generate planting schedule error:", error);
-      res.status(500).json({
-        success: false,
-        error: error.message || "Failed to generate planting schedule",
       });
     }
   }

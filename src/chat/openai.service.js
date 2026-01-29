@@ -117,7 +117,7 @@ data:image/jpeg;base64,${base64Image}`;
 
       try {
         const parsed = JSON.parse(content);
-        return parsed;
+        return parsed;    
       } catch (e) {
         // fallback
         return {

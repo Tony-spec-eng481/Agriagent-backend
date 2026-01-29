@@ -12,7 +12,7 @@ router.post("/session/create", validateRequest(["userId"]), (req, res) =>
 router.post("/message", validateRequest(["message"]), (req, res) =>
   chatController.sendMessage(req, res),
 );
-
+   
 // Analyze image
 router.post(
   "/image",

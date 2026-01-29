@@ -16,7 +16,7 @@ router.post(
   "/analyze",
   authenticate,
   upload.single("image"),
-  requireImage,
+  requireImage,  
   handleUploadError,
   validateImageAnalysis,
   imageController.analyzeImage
@@ -24,7 +24,6 @@ router.post(
 
 router.get(
   "/analysis/:analysisId",
-  authenticate,
   imageController.getImageAnalysis
 );
 router.get(
