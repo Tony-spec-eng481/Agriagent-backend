@@ -5,7 +5,7 @@ class GeminiService {
   constructor() {
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-latest",
+      model: "gemini-2.5-flash",
       generationConfig: {
         maxOutputTokens: 2000,
         temperature: 0.7,
