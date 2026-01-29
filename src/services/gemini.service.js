@@ -5,7 +5,7 @@ class GeminiService {
   constructor() {
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-1.5-flash-latest",
+      model: "gemini-2.5-flash-latest",
       generationConfig: {
         maxOutputTokens: 2000,
         temperature: 0.7,
@@ -24,6 +24,18 @@ class GeminiService {
     } catch (error) {
       console.error("Failed to parse JSON:", error);
       return {};
+    }
+  }
+
+  // Helper method to check available models
+  async checkModels() {
+    try {
+      const models = await this.genAI.listModels();
+      console.log("Available models:", models);
+      return models;
+    } catch (error) {
+      console.error("Error checking models:", error);
+      return [];
     }
   }
 
@@ -66,7 +78,7 @@ ${message}
       const parsed = await this.parseJSONResponse(content);
 
       return {
-        response: parsed.response || content,
+        response: parsed.response || content || "No response generated",
         metadata: parsed.metadata || {},
         suggestedActions: parsed.suggestedActions || [],
       };
@@ -81,8 +93,7 @@ ${message}
   // =========================
   async analyzeImage(base64Image) {
     try {
-      const prompt = `
-You are an expert farmer and agricultural scientist.
+      const prompt = `You are an expert farmer and agricultural scientist.
 
 IMPORTANT: Respond ONLY with valid JSON:
 {
@@ -93,30 +104,27 @@ IMPORTANT: Respond ONLY with valid JSON:
   "issues": [],
   "recommendations": [],
   "story": "optional"
-}
-`;
+}`;
 
-      const result = await this.model.generateContent({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              {
-                inlineData: {
-                  data: base64Image,
-                  mimeType: "image/jpeg",
-                },
+      const result = await this.model.generateContent([
+        {
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                data: base64Image,
+                mimeType: "image/jpeg",
               },
-            ],
-          },
-        ],
-      });
+            },
+          ],
+        },
+      ]);
 
       const content = result.response.text();
       const parsed = await this.parseJSONResponse(content);
 
       return {
-        analysis: parsed.analysis || content,
+        analysis: parsed.analysis || content || "No analysis available",
         cropName: parsed.cropName || null,
         healthStatus: parsed.healthStatus || "unknown",
         confidence: parsed.confidence || 0,
@@ -135,8 +143,7 @@ IMPORTANT: Respond ONLY with valid JSON:
   // =========================
   async analyzeDocument(textContent, fileType) {
     try {
-      const prompt = `
-You are an experienced farmer.
+      const prompt = `You are an experienced farmer.
 
 IMPORTANT: Respond ONLY with valid JSON:
 {
@@ -148,14 +155,18 @@ IMPORTANT: Respond ONLY with valid JSON:
 
 Document type: ${fileType}
 Content:
-${textContent}
-`;
+${textContent}`;
 
       const result = await this.model.generateContent(prompt);
       const content = result.response.text();
       const parsed = await this.parseJSONResponse(content);
 
-      return parsed;
+      return {
+        summary: parsed.summary || content || "No summary available",
+        implications: parsed.implications || "",
+        recommendations: parsed.recommendations || [],
+        warnings: parsed.warnings || [],
+      };
     } catch (error) {
       console.error("Gemini Document Analysis Error:", error);
       throw new Error("Failed to analyze document.");
@@ -167,8 +178,7 @@ ${textContent}
   // =========================
   async generatePlantingSchedule(crop, location, season) {
     try {
-      const prompt = `
-You are an expert agricultural planner.
+      const prompt = `You are an expert agricultural planner.
 
 IMPORTANT: Respond ONLY with valid JSON:
 {
@@ -184,13 +194,13 @@ IMPORTANT: Respond ONLY with valid JSON:
 
 Crop: ${crop}
 Location: ${location}
-Season: ${season}
-`;
+Season: ${season}`;
 
       const result = await this.model.generateContent(prompt);
       const content = result.response.text();
+      const parsed = await this.parseJSONResponse(content);
 
-      return await this.parseJSONResponse(content);
+      return parsed || {};
     } catch (error) {
       console.error("Gemini Planting Schedule Error:", error);
       throw new Error("Failed to generate planting schedule.");
