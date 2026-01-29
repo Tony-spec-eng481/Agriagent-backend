@@ -5,7 +5,7 @@ class GeminiService {
   constructor() {
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-1.5-flash", // or "gemini-1.5-pro" for more complex tasks
+      model: "gemini-1.5-flash",
       generationConfig: {
         maxOutputTokens: 2000,
         temperature: 0.7,
@@ -18,20 +18,17 @@ class GeminiService {
   // =========================
   async parseJSONResponse(text) {
     try {
-      // Extract JSON from text (Gemini might wrap JSON in markdown or add text)
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
-      }
-      return { response: text, metadata: {} };
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+      return {};
     } catch (error) {
       console.error("Failed to parse JSON:", error);
-      return { response: text, metadata: {} };
+      return {};
     }
   }
 
   // =========================
-  // Analyze text message from farmer
+  // Analyze text message
   // =========================
   async analyzeTextMessage(message, context = {}) {
     try {
@@ -40,38 +37,36 @@ class GeminiService {
         : "";
 
       const chatContext = context.chatHistory
-        ? `Previous conversation context:\n${context.chatHistory
+        ? `Previous conversation:\n${context.chatHistory
             .slice(-5)
             .map((m) => `${m.role}: ${m.content}`)
             .join("\n")}`
         : "";
 
-      const systemContent = `${systemPrompt}
+      const prompt = `
+${systemPrompt}
 
 ${userContext}
 ${chatContext}
 
-IMPORTANT: You MUST respond with ONLY valid JSON in this exact format:
+IMPORTANT: Respond ONLY with valid JSON:
 {
-  "response": "Your main response text here",
+  "response": "string",
   "metadata": {},
   "suggestedActions": []
 }
 
-Do not include any additional text, explanations, or markdown formatting outside the JSON object.`;
+Farmer message:
+${message}
+`;
 
-      const result = await this.model.generateContent([
-        { role: "user", parts: [{ text: systemContent }] },
-        { role: "user", parts: [{ text: message }] },
-      ]);
-
-      const response = await result.response;
-      const content = response.text();
+      const result = await this.model.generateContent(prompt);
+      const content = result.response.text();
 
       const parsed = await this.parseJSONResponse(content);
 
       return {
-        response: parsed.response || content || "Farmer Joe didn't respond",
+        response: parsed.response || content,
         metadata: parsed.metadata || {},
         suggestedActions: parsed.suggestedActions || [],
       };
@@ -82,56 +77,46 @@ Do not include any additional text, explanations, or markdown formatting outside
   }
 
   // =========================
-  // Analyze image for crops, pests, etc.
+  // Analyze image
   // =========================
-  async analyzeImage(base64Image, context = {}) {
+  async analyzeImage(base64Image) {
     try {
-      // Build prompt
-      const systemContent = `You are an expert farmer and agricultural scientist.
-Analyze the following image. Provide:
-1. Crop identification
-2. Health assessment (healthy, stressed, diseased, unknown)
-3. Issues (pests, diseases, nutrient deficiencies)
-4. Recommendations
-5. Optional short farming story
+      const prompt = `
+You are an expert farmer and agricultural scientist.
 
-IMPORTANT: You MUST respond with ONLY valid JSON in this exact format:
+IMPORTANT: Respond ONLY with valid JSON:
 {
   "analysis": "string",
   "cropName": "string or null",
-  "healthStatus": "healthy" | "stressed" | "diseased" | "unknown",
-  "confidence": number (0-100),
-  "issues": array of {type, description, severity, recommendation},
-  "recommendations": array of strings,
-  "story": "optional string"
+  "healthStatus": "healthy|stressed|diseased|unknown",
+  "confidence": number,
+  "issues": [],
+  "recommendations": [],
+  "story": "optional"
 }
+`;
 
-Do not include any additional text, explanations, or markdown formatting outside the JSON object.`;
+      const result = await this.model.generateContent({
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  data: base64Image,
+                  mimeType: "image/jpeg",
+                },
+              },
+            ],
+          },
+        ],
+      });
 
-      // For Gemini, we need to handle the image differently
-      // Convert base64 to buffer for Gemini
-      const imagePart = {
-        inlineData: {
-          data: base64Image,
-          mimeType: "image/jpeg",
-        },
-      };
-
-      const result = await this.model.generateContent([
-        { role: "user", parts: [{ text: systemContent }] },
-        {
-          role: "user",
-          parts: [imagePart, { text: "Analyze this farming image" }],
-        },
-      ]);
-
-      const response = await result.response;
-      const content = response.text();
-
+      const content = result.response.text();
       const parsed = await this.parseJSONResponse(content);
 
       return {
-        analysis: parsed.analysis || content || "No analysis available",
+        analysis: parsed.analysis || content,
         cropName: parsed.cropName || null,
         healthStatus: parsed.healthStatus || "unknown",
         confidence: parsed.confidence || 0,
@@ -145,61 +130,32 @@ Do not include any additional text, explanations, or markdown formatting outside
     }
   }
 
-  // In gemini.service.js, add this method if you need a different analysis than the existing analyzeImage method
-async analyzeImageWithVision(base64Image, context = {}) {
-  try {
-    // Reuse the existing analyzeImage method or create a specialized version
-    const analysis = await this.analyzeImage(base64Image, context);
-    
-    // Enhance with additional context if needed
-    return {
-      ...analysis,
-      visionType: "agricultural",
-      analyzedAt: new Date().toISOString(),
-      model: "gemini-1.5-flash",
-    };
-  } catch (error) {
-    console.error("Gemini Vision Analysis Error:", error);
-    throw new Error("Failed to analyze image with vision.");
-  }
-}
-
   // =========================
-  // Analyze document (soil reports, CSVs, PDFs)
+  // Analyze document
   // =========================
   async analyzeDocument(textContent, fileType) {
     try {
-      const systemContent = `You are an experienced farmer who can interpret agricultural documents.
-Analyze the content below and provide practical insights.
+      const prompt = `
+You are an experienced farmer.
 
-IMPORTANT: You MUST respond with ONLY valid JSON in this exact format:
+IMPORTANT: Respond ONLY with valid JSON:
 {
-  "summary": "string (key findings)",
-  "implications": "string (practical farming implications)",
-  "recommendations": ["array", "of", "strings"],
-  "warnings": ["array", "of", "strings"] (optional)
+  "summary": "string",
+  "implications": "string",
+  "recommendations": [],
+  "warnings": []
 }
 
-Do not include any additional text, explanations, or markdown formatting outside the JSON object.`;
+Document type: ${fileType}
+Content:
+${textContent}
+`;
 
-      const userContent = `Document type: ${fileType}\nContent:\n${textContent}`;
-
-      const result = await this.model.generateContent([
-        { role: "user", parts: [{ text: systemContent }] },
-        { role: "user", parts: [{ text: userContent }] },
-      ]);
-
-      const response = await result.response;
-      const content = response.text();
-
+      const result = await this.model.generateContent(prompt);
+      const content = result.response.text();
       const parsed = await this.parseJSONResponse(content);
 
-      return {
-        summary: parsed.summary || content || "No summary available",
-        implications: parsed.implications || "",
-        recommendations: parsed.recommendations || [],
-        warnings: parsed.warnings || [],
-      };
+      return parsed;
     } catch (error) {
       console.error("Gemini Document Analysis Error:", error);
       throw new Error("Failed to analyze document.");
@@ -211,35 +167,30 @@ Do not include any additional text, explanations, or markdown formatting outside
   // =========================
   async generatePlantingSchedule(crop, location, season) {
     try {
-      const systemContent = `You are an expert in agricultural planning and crop cycles.
+      const prompt = `
+You are an expert agricultural planner.
 
-IMPORTANT: You MUST respond with ONLY valid JSON in this exact format:
+IMPORTANT: Respond ONLY with valid JSON:
 {
-  "bestPlantingDates": ["array", "of", "dates"],
+  "bestPlantingDates": [],
   "soilPreparation": "string",
   "spacing": "string",
   "depth": "string",
   "watering": "string",
   "fertilization": "string",
   "pestManagement": "string",
-  "expectedHarvestDates": ["array", "of", "dates"]
+  "expectedHarvestDates": []
 }
 
-Do not include any additional text, explanations, or markdown formatting outside the JSON object.`;
+Crop: ${crop}
+Location: ${location}
+Season: ${season}
+`;
 
-      const userContent = `Generate a detailed planting schedule for ${crop} in ${location} during ${season}.`;
+      const result = await this.model.generateContent(prompt);
+      const content = result.response.text();
 
-      const result = await this.model.generateContent([
-        { role: "user", parts: [{ text: systemContent }] },
-        { role: "user", parts: [{ text: userContent }] },
-      ]);
-
-      const response = await result.response;
-      const content = response.text();
-
-      const parsed = await this.parseJSONResponse(content);
-
-      return parsed;
+      return await this.parseJSONResponse(content);
     } catch (error) {
       console.error("Gemini Planting Schedule Error:", error);
       throw new Error("Failed to generate planting schedule.");
