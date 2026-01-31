@@ -96,6 +96,7 @@ try {
 
   // Export Firebase services
   db = admin.firestore();
+  db.settings({ ignoreUndefinedProperties: true });
   auth = admin.auth();
   storage = admin.storage().bucket();
   FieldValue = admin.firestore.FieldValue;
