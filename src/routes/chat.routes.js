@@ -1,7 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const chatController = require("../controllers/chat.controller");
+const { authenticate } = require("../middleware/auth.middleware");
 const { validateRequest } = require("../middleware/validation.middleware");
+
+// All chat routes require authentication
+router.use(authenticate);
 
 // Create new chat session
 router.post("/session/create", validateRequest(["userId"]), (req, res) =>
@@ -12,12 +16,12 @@ router.post("/session/create", validateRequest(["userId"]), (req, res) =>
 router.post("/message", validateRequest(["message"]), (req, res) =>
   chatController.sendMessage(req, res),
 );
-   
+
 // Analyze image
 router.post(
   "/image",
   validateRequest(["imageBase64"]),
-  (req, res) => chatController.analyzeImage?.(req, res), // optional chaining if analyzeImage is missing
+  (req, res) => chatController.analyzeImage(req, res),
 );
 
 // Analyze document

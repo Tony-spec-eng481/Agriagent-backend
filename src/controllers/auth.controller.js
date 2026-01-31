@@ -2,7 +2,7 @@ const { db, auth } = require("../config/firebase.config");
 const { validateLogin, validateRegister } = require("../utils/validators");
 const axios = require("axios");
 
-const FIREBASE_REST_URL = (apiKey) =>
+const FIREBASE_SIGN_IN_URL = (apiKey) =>
   `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
 
 exports.register = async (req, res, next) => {
@@ -72,38 +72,46 @@ exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    // Validate input
     const validation = validateLogin({ email, password });
     if (!validation.isValid) {
       return res.status(400).json({ error: validation.errors });
     }
 
-    // Instead of using REST API, verify the user with Admin SDK
-    // First, try to get the user by email
-    let userRecord;
-    try {
-      userRecord = await auth.getUserByEmail(email);
-    } catch (error) {
-      if (error.code === "auth/user-not-found") {
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-      throw error;
+    const apiKey = process.env.FIREBASE_WEB_API_KEY || process.env.EXPO_PUBLIC_FIREBASE_API_KEY;
+    if (!apiKey) {
+      console.warn("FIREBASE_WEB_API_KEY not set; password cannot be verified on server.");
+      return res.status(503).json({
+        error: "Server configuration error. Use client sign-in.",
+      });
     }
 
-    // IMPORTANT: In production, you should use Firebase Client SDK on the frontend
-    // OR use a custom token approach. Admin SDK cannot verify password directly.
-    // Here's the corrected approach:
+    // Verify email + password via Firebase REST API
+    let signInRes;
+    try {
+      signInRes = await axios.post(
+        FIREBASE_SIGN_IN_URL(apiKey),
+        { email: email.trim(), password, returnSecureToken: true },
+        { headers: { "Content-Type": "application/json" }, timeout: 10000 }
+      );
+    } catch (err) {
+      if (err.response?.data?.error?.message === "INVALID_PASSWORD" || err.response?.data?.error?.message === "EMAIL_NOT_FOUND") {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      if (err.response?.data?.error?.message === "INVALID_LOGIN_CREDENTIALS") {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      throw err;
+    }
 
-    // 1. Create a custom token
-    const customToken = await auth.createCustomToken(userRecord.uid);
+    const uid = signInRes.data.localId;
+    const customToken = await auth.createCustomToken(uid);
 
-    // 2. Get user profile from Firestore
-    let userDoc = await db.collection("users").doc(userRecord.uid).get();
+    let userDoc = await db.collection("users").doc(uid).get();
 
     if (!userDoc.exists) {
-      // Create minimal profile
+      const userRecord = await auth.getUser(uid);
       const profile = {
-        uid: userRecord.uid,
+        uid,
         email: userRecord.email,
         name: userRecord.displayName || email.split("@")[0],
         phone: userRecord.phoneNumber || null,
@@ -118,20 +126,19 @@ exports.login = async (req, res, next) => {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-
-      await db.collection("users").doc(userRecord.uid).set(profile);
-      userDoc = await db.collection("users").doc(userRecord.uid).get();
+      await db.collection("users").doc(uid).set(profile);
+      userDoc = await db.collection("users").doc(uid).get();
     }
 
     const userProfile = userDoc.data();
 
     res.json({
       success: true,
-      customToken, // Send this to client
+      customToken,
       user: {
-        uid: userRecord.uid,
-        email: userRecord.email,
-        name: userRecord.displayName,
+        uid,
+        email: userProfile?.email ?? signInRes.data.email,
+        name: userProfile?.name ?? userProfile?.displayName,
         ...userProfile,
       },
     });
@@ -211,6 +218,34 @@ exports.logout = async (req, res, next) => {
     res.json({
       success: true,
       message: "Logged out successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Forgot password: validate email. Actual reset email is sent by the client
+ * using Firebase sendPasswordResetEmail. This endpoint can be used to
+ * validate the request or trigger server-side email if you integrate a mailer.
+ */
+exports.forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({ error: "Valid email is required" });
+    }
+
+    const trimmed = email.trim();
+    const validator = require("validator");
+    if (!validator.isEmail(trimmed)) {
+      return res.status(400).json({ error: "Invalid email address" });
+    }
+
+    res.json({
+      success: true,
+      message: "If an account exists with this email, a password reset link will be sent.",
     });
   } catch (error) {
     next(error);

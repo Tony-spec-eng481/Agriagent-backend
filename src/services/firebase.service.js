@@ -233,6 +233,7 @@ class FirebaseService {
       jpeg: "image/jpeg",
       png: "image/png",
       gif: "image/gif",
+      webp: "image/webp",
       pdf: "application/pdf",
       txt: "text/plain",
       csv: "text/csv",
@@ -240,6 +241,31 @@ class FirebaseService {
       docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     };
     return types[ext] || "application/octet-stream";
+  }
+
+  // Alias for chat/images and image analysis uploads
+  async uploadImage(buffer, userId, folder = "chat-images", fileName = null) {
+    return this.uploadFile(buffer, userId, folder, fileName);
+  }
+
+  async getUserImageAnalyses(userId, options = {}) {
+    const { limit = 20, offset = 0 } = options;
+    const snapshot = await this.db
+      .collection("imageAnalysis")
+      .where("userId", "==", userId)
+      .orderBy("timestamp", "desc")
+      .limit(limit)
+      .get();
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async deleteImageAnalysis(analysisId, userId) {
+    const ref = this.db.collection("imageAnalysis").doc(analysisId);
+    const doc = await ref.get();
+    if (!doc.exists || doc.data().userId !== userId) {
+      throw new Error("Unauthorized or analysis not found");
+    }
+    await ref.delete();
   }
 
   // =========================

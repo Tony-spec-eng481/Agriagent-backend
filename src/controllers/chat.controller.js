@@ -8,7 +8,9 @@ class ChatController {
   // =========================
   async sendMessage(req, res) {
     try {
+      const uid = req.user?.uid;
       const { message, userId, location, chatId, chatHistory } = req.body;
+      const effectiveUserId = userId || uid;
 
       if (!message) {
         return res
@@ -17,13 +19,13 @@ class ChatController {
       }
 
       // Get or create session
-      const session = await FirebaseService.getOrCreateSession(userId, chatId);
+      const session = await FirebaseService.getOrCreateSession(effectiveUserId, chatId);
       const sessionId = session.session.id;
 
       // Save user message
       const userMessageId = await FirebaseService.saveChatMessage({
         id: `user_msg_${Date.now()}_${uuidv4()}`,
-        userId: userId || "guest",
+        userId: effectiveUserId,
         chatId: sessionId,
         role: "user",
         content: message,
@@ -77,7 +79,9 @@ class ChatController {
   // =========================
   async analyzeImage(req, res) {
     try {
+      const uid = req.user?.uid;
       const { imageBase64, userId, location, chatId } = req.body;
+      const effectiveUserId = userId || uid;
 
       if (!imageBase64) {
         return res
@@ -86,7 +90,7 @@ class ChatController {
       }
 
       // Get or create session
-      const session = await FirebaseService.getOrCreateSession(userId, chatId, {
+      const session = await FirebaseService.getOrCreateSession(effectiveUserId, chatId, {
         title: "Image Analysis",
         type: "image",
         tags: ["image-analysis"],
@@ -99,7 +103,7 @@ class ChatController {
         const buffer = Buffer.from(imageBase64, "base64");
         imageUrl = await FirebaseService.uploadFile(
           buffer,
-          userId || "guest",
+          effectiveUserId,
           "chat-images",
           `img_${Date.now()}_${uuidv4()}.jpg`,
         );
@@ -110,7 +114,7 @@ class ChatController {
       // Save user message
       const userMessageId = await FirebaseService.saveChatMessage({
         id: `user_img_${Date.now()}_${uuidv4()}`,
-        userId: userId || "guest",
+        userId: effectiveUserId,
         chatId: sessionId,
         role: "user",
         content: "Analyze this image",
@@ -165,8 +169,10 @@ class ChatController {
   // =========================
   async analyzeDocument(req, res) {
     try {
+      const uid = req.user?.uid;
       const { fileBase64, fileName, fileType, userId, location, chatId } =
         req.body;
+      const effectiveUserId = userId || uid;
 
       if (!fileBase64 || !fileName) {
         return res.status(400).json({
@@ -178,24 +184,21 @@ class ChatController {
       const sessionId = chatId || `chat_${Date.now()}_${uuidv4()}`;
       const messageId = `doc_${Date.now()}_${uuidv4()}`;
 
-      // Extract text content (for text-based documents)
-      const textContent = Buffer.from(fileBase64, "base64")
-        .toString("utf-8")
-        .substring(0, 10000);
-
-      // Analyze with Gemini
+      // Analyze with Gemini (supports text, base64 PDF/image)
       const analysis = await GeminiService.analyzeDocument(
-        textContent,
-        fileType,
+        fileBase64,
+        fileType || "application/octet-stream",
+        fileName,
       );
 
       let fileUrl;
       try {
         const buffer = Buffer.from(fileBase64, "base64");
-        fileUrl = await FirebaseService.uploadImage(
+        fileUrl = await FirebaseService.uploadFile(
           buffer,
-          userId || "guest",
+          effectiveUserId,
           "chat-documents",
+          fileName,
         );
       } catch (err) {
         console.error("Document upload failed:", err);
@@ -218,7 +221,7 @@ class ChatController {
 
       const docData = {
         id: messageId,
-        userId: userId || "guest",
+        userId: effectiveUserId,
         message: `Document analysis: ${fileName}`,
         response: analysis.summary || "Document analyzed",
         type: "file",
@@ -356,9 +359,11 @@ class ChatController {
   // =========================
   async createChatSession(req, res) {
     try {
+      const uid = req.user?.uid;
       const { userId, title, type = "text", tags = [] } = req.body;
+      const effectiveUserId = userId || uid;
 
-      if (!userId) {
+      if (!effectiveUserId) {
         return res.status(400).json({
           success: false,
           error: "User ID is required",
@@ -368,7 +373,7 @@ class ChatController {
       const chatId = `chat_${Date.now()}_${uuidv4()}`;
       const sessionData = {
         id: chatId,
-        userId,
+        userId: effectiveUserId,
         title: title || "Farm Chat",
         type,
         tags,

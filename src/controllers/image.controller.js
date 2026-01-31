@@ -6,7 +6,9 @@ const { v4: uuidv4 } = require("uuid");
 
 exports.analyzeImage = async (req, res, next) => {
   try {
-    const { userId, location, chatId } = req.body;  
+    const uid = req.user?.uid;
+    const { userId, location, chatId } = req.body;
+    const effectiveUserId = userId || uid;
     const imageFile = req.file;
 
     if (!imageFile) {
@@ -16,14 +18,15 @@ exports.analyzeImage = async (req, res, next) => {
     // Process image
     const processedImage = await imageService.processImage(imageFile.buffer);
 
-    // Convert to base64 for Gemini
-    const base64Image = processedImage.toString('base64');
+    // Convert to base64 for Gemini (raw base64, no data URL)
+    const base64Image = processedImage.toString("base64");
+    const mimeType = imageFile.mimetype || "image/jpeg";
 
     // Analyze with Gemini Vision
-    const analysis = await GeminiService.analyzeImage(
-      base64Image,
-      { userLocation: location }
-    );
+    const analysis = await GeminiService.analyzeImage(base64Image, {
+      userLocation: location,
+      mimeType,
+    });
 
     // Extract drug recommendations
     const drugInfo = await drugService.extractDrugRecommendations(
@@ -33,8 +36,8 @@ exports.analyzeImage = async (req, res, next) => {
 
     // Get or create chat session for image analysis
     let sessionId;
-    if (userId) {
-      const session = await FirebaseService.getOrCreateSession(userId, chatId, {
+    if (effectiveUserId) {
+      const session = await FirebaseService.getOrCreateSession(effectiveUserId, chatId, {
         title: "Image Analysis",
         type: "image",
         tags: ["image-analysis"],
@@ -45,17 +48,17 @@ exports.analyzeImage = async (req, res, next) => {
     // Upload image to Firebase Storage
     const imageUrl = await FirebaseService.uploadImage(
       processedImage,
-      userId || "guest",
+      effectiveUserId || "guest",
       "chat-images",
       `img_${Date.now()}_${uuidv4()}.jpg`
     );
 
     // Save user message with image
     let userMessageId;
-    if (userId) {
+    if (effectiveUserId) {
       userMessageId = await FirebaseService.saveChatMessage({
         id: `user_img_${Date.now()}_${uuidv4()}`,
-        userId: userId || "guest",
+        userId: effectiveUserId,
         chatId: sessionId,
         role: "user",
         content: "Analyze this image",
@@ -67,7 +70,7 @@ exports.analyzeImage = async (req, res, next) => {
 
     // Save AI response
     let aiMessageId;
-    if (userId) {
+    if (effectiveUserId) {
       aiMessageId = await FirebaseService.saveAIMessage({
         id: `ai_img_${Date.now()}_${uuidv4()}`,
         userId: "ai",
@@ -87,10 +90,10 @@ exports.analyzeImage = async (req, res, next) => {
     }
 
     // Save analysis to database
-    if (userId) {
+    if (effectiveUserId) {
       await FirebaseService.saveImageAnalysis({
         id: `analysis_${Date.now()}_${uuidv4()}`,
-        userId,
+        userId: effectiveUserId,
         imageUrl,
         analysis,
         drugInfo,

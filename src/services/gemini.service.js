@@ -88,12 +88,32 @@ ${message}
     }
   }
 
+  // Strip data URL prefix if present (e.g. data:image/jpeg;base64,xxxx)
+  _stripBase64DataUrl(input) {
+    if (typeof input !== "string") return input;
+    const match = input.match(/^data:([^;]+);base64,(.+)$/);
+    return match ? match[2] : input;
+  }
+
+  _mimeFromFileType(fileType) {
+    const m = (fileType || "").toLowerCase();
+    if (m.includes("png")) return "image/png";
+    if (m.includes("webp")) return "image/webp";
+    if (m.includes("gif")) return "image/gif";
+    if (m.includes("pdf")) return "application/pdf";
+    if (m.includes("jpeg") || m.includes("jpg")) return "image/jpeg";
+    return "image/jpeg";
+  }
+
   // =========================
   // Analyze image
   // =========================
-  async analyzeImage(base64Image) {
+  async analyzeImage(base64Image, options = {}) {
     try {
-      const prompt = `You are an expert farmer and agricultural scientist.
+      const rawBase64 = this._stripBase64DataUrl(base64Image);
+      const mimeType = options.mimeType || this._mimeFromFileType(options.fileType) || "image/jpeg";
+
+      const prompt = `You are an expert farmer and agricultural scientist. Analyze this image (crop, plant, soil, or farm-related).
 
 IMPORTANT: Respond ONLY with valid JSON:
 {
@@ -112,8 +132,8 @@ IMPORTANT: Respond ONLY with valid JSON:
             { text: prompt },
             {
               inlineData: {
-                data: base64Image,
-                mimeType: "image/jpeg",
+                data: rawBase64,
+                mimeType,
               },
             },
           ],
@@ -139,10 +159,60 @@ IMPORTANT: Respond ONLY with valid JSON:
   }
 
   // =========================
-  // Analyze document
+  // Analyze document (supports base64 PDF, images, or text)
   // =========================
-  async analyzeDocument(textContent, fileType) {
+  async analyzeDocument(fileBase64, fileType, fileName = "") {
     try {
+      const rawBase64 = this._stripBase64DataUrl(fileBase64);
+      const mime = (fileType || "").toLowerCase();
+      const isPdf = mime.includes("pdf");
+      const isImage = mime.includes("image") || mime.includes("png") || mime.includes("jpeg") || mime.includes("jpg") || mime.includes("webp") || mime.includes("gif");
+
+      if (isPdf || isImage) {
+        const mimeType = isPdf ? "application/pdf" : this._mimeFromFileType(fileType);
+        const prompt = `You are an experienced farmer. Analyze this document/image (${fileName || fileType}).
+
+IMPORTANT: Respond ONLY with valid JSON:
+{
+  "summary": "string",
+  "implications": "string",
+  "recommendations": [],
+  "warnings": []
+}`;
+
+        const result = await this.model.generateContent([
+          {
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  data: rawBase64,
+                  mimeType,
+                },
+              },
+            ],
+          },
+        ]);
+
+        const content = result.response.text();
+        const parsed = await this.parseJSONResponse(content);
+
+        return {
+          summary: parsed.summary || content || "No summary available",
+          implications: parsed.implications || "",
+          recommendations: parsed.recommendations || [],
+          warnings: parsed.warnings || [],
+        };
+      }
+
+      // Text-based document: decode base64 to text
+      let textContent;
+      try {
+        textContent = Buffer.from(rawBase64, "base64").toString("utf-8").substring(0, 50000);
+      } catch {
+        textContent = "";
+      }
+
       const prompt = `You are an experienced farmer.
 
 IMPORTANT: Respond ONLY with valid JSON:
@@ -154,6 +224,7 @@ IMPORTANT: Respond ONLY with valid JSON:
 }
 
 Document type: ${fileType}
+File name: ${fileName}
 Content:
 ${textContent}`;
 

@@ -2,6 +2,8 @@ const {
   validateChatInput,
   validateLocation,
   validateUser,
+  validateRegister,
+  validateLogin,
 } = require("../utils/validators");
 
 const validateChat = (req, res, next) => {
@@ -40,7 +42,20 @@ const validateImageAnalysis = (req, res, next) => {
 };
 
 const validateUserRegistration = (req, res, next) => {
-  const validation = validateUser(req.body);
+  const validation = validateRegister(req.body);
+
+  if (!validation.isValid) {
+    return res.status(400).json({
+      error: "Validation failed",
+      details: validation.errors,
+    });
+  }
+
+  next();
+};
+
+const validateLoginBody = (req, res, next) => {
+  const validation = validateLogin(req.body);
 
   if (!validation.isValid) {
     return res.status(400).json({
@@ -118,6 +133,7 @@ module.exports = {
   validateChat,
   validateImageAnalysis,
   validateUserRegistration,
+  validateLoginBody,
   validateCoordinates,
   validatePagination,
   validateRequest,
