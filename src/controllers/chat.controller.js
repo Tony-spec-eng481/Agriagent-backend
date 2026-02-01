@@ -29,7 +29,7 @@ class ChatController {
         chatId: sessionId,
         role: "user",
         content: message,
-        timestamp: new Date(),
+        timestamp: new Date(),   
       });
 
       // Get recent chat history for context
@@ -119,13 +119,14 @@ class ChatController {
         role: "user",
         content: "Analyze this image",
         imageUrl: imageUrl,
-        type: "image",
+        type: "image",   
         timestamp: new Date(),
       });
 
-      // Analyze with Gemini
+      // Analyze with Gemini (pass mimeType from request if provided)
       const analysis = await GeminiService.analyzeImage(imageBase64, {
         userLocation: location,
+        mimeType: req.body.mimeType || "image/jpeg",
       });
 
       // Save AI message

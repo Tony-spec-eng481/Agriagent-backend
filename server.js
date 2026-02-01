@@ -27,7 +27,6 @@ const shopRoutes = require("./src/routes/shop.routes");
 const newsRoutes = require("./src/routes/news.routes");
 const authRoutes = require("./src/routes/auth.routes");
 const historyRoutes = require("./src/routes/history.routes");
-const imageRoutes = require("./src/routes/image.routes");
 
 /* ======================================================
    EXPRESS INIT
@@ -56,8 +55,10 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   }),
 );
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+// Increase body size limits to allow larger base64 uploads from mobile clients
+// Base64 expands binary size by ~33%, so allow up to 20mb by default
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(morgan("dev"));
 
 // Request logging middleware
@@ -72,9 +73,10 @@ app.options("/", cors());
 /* ======================================================
    MULTER CONFIG
 ====================================================== */
+// Multer memory storage with larger file size limit (20MB)
 const upload = multer({
-  storage: multer.memoryStorage(),  
-  limits: { fileSize: 10 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
 });
 
 /* ======================================================
@@ -87,7 +89,6 @@ app.use("/api/shops", shopRoutes);
 app.use("/api/news", newsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/history", historyRoutes);
-app.use("/api/image", imageRoutes);
 
 // Additional direct routes (legacy - will be moved to routers)
 // app.post(
